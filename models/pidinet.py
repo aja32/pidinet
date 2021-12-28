@@ -1,7 +1,4 @@
-"""
-Author: Zhuo Su, Wenzhe Liu
-Date: Feb 18, 2021
-"""
+
 
 import math
 import numpy as np
@@ -281,15 +278,7 @@ class PiDiNet(nn.Module):
         return outputs
 
 
-def pidinet_tiny(args):
-    pdcs = config_model(args.config)
-    dil = 8 if args.dil else None
-    return PiDiNet(20, pdcs, dil=dil, sa=args.sa)
 
-def pidinet_small(args):
-    pdcs = config_model(args.config)
-    dil = 12 if args.dil else None
-    return PiDiNet(30, pdcs, dil=dil, sa=args.sa)
 
 def pidinet(args):
     pdcs = config_model(args.config)
@@ -300,15 +289,6 @@ def pidinet(args):
 
 ## convert pidinet to vanilla cnn
 
-def pidinet_tiny_converted(args):
-    pdcs = config_model_converted(args.config)
-    dil = 8 if args.dil else None
-    return PiDiNet(20, pdcs, dil=dil, sa=args.sa, convert=True)
-
-def pidinet_small_converted(args):
-    pdcs = config_model_converted(args.config)
-    dil = 12 if args.dil else None
-    return PiDiNet(30, pdcs, dil=dil, sa=args.sa, convert=True)
 
 def pidinet_converted(args):
     pdcs = config_model_converted(args.config)

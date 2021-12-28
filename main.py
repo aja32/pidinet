@@ -1,10 +1,7 @@
 """
 (Training, Generating edge maps)
-Pixel Difference Networks for Efficient Edge Detection (accepted as an ICCV 2021 oral)
-See paper in https://arxiv.org/abs/2108.07009
+Pixel Difference Networks for Efficient Edge Detection
 
-Author: Zhuo Su, Wenzhe Liu
-Date: Aug 22, 2020
 """
 
 from __future__ import absolute_import
@@ -12,13 +9,16 @@ from __future__ import unicode_literals
 from __future__ import print_function
 from __future__ import division
 
+import os
+os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
+
 import argparse
 import os
 import time
 import models
 from models.convert_pidinet import convert_pidinet
 from utils import *
-from edge_dataloader import BSDS_VOCLoader, BSDS_Loader, Multicue_Loader, NYUD_Loader, Custom_Loader
+from edge_dataloader import BSDS_VOCLoader, BSDS_Loader, Custom_Loader
 from torch.utils.data import DataLoader
 
 import torch
@@ -171,12 +171,7 @@ def main(running_file):
         else:
             train_dataset = BSDS_VOCLoader(root=args.datadir, split="train", threshold=args.eta, ablation=args.ablation)
             test_dataset = BSDS_VOCLoader(root=args.datadir, split="test", threshold=args.eta)
-    elif 'Multicue' == args.dataset[0]:
-        train_dataset = Multicue_Loader(root=args.datadir, split="train", threshold=args.eta, setting=args.dataset[1:])
-        test_dataset = Multicue_Loader(root=args.datadir, split="test", threshold=args.eta, setting=args.dataset[1:])
-    elif 'NYUD' == args.dataset[0]:
-        train_dataset = NYUD_Loader(root=args.datadir, split="train", setting=args.dataset[1:])
-        test_dataset = NYUD_Loader(root=args.datadir, split="test", setting=args.dataset[1:])
+
     elif 'Custom' == args.dataset[0]:
         train_dataset = Custom_Loader(root=args.datadir)
         test_dataset = Custom_Loader(root=args.datadir)

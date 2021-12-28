@@ -1,8 +1,6 @@
 """
 Utility functions for training
 
-Author: Zhuo Su, Wenzhe Liu
-Date: Aug 22, 2020
 """
 
 from __future__ import absolute_import

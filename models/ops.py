@@ -1,8 +1,6 @@
 """
 Function factory for pixel difference convolutional operations.
 
-Author: Zhuo Su, Wenzhe Liu
-Date: Aug 23, 2020
 """
 import math
 
