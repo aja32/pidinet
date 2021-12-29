@@ -6,16 +6,9 @@ from PIL import Image
 import numpy as np
 
 
-def fold_files(foldname):
-    """All files in the fold should have the same extern"""
-    allfiles = os.listdir(foldname)
-    if len(allfiles) < 1:
-        raise ValueError('No images in the data folder')
-        return None
-    else:
-        return allfiles
 
-class BSDS_Loader(data.Dataset):
+
+class Dataloader_BSDS500(data.Dataset):
     """
     Dataloader BSDS500
     """
@@ -165,3 +158,14 @@ class Custom_Loader(data.Dataset):
         filename = Path(self.imgList[index]).stem
 
         return img, filename
+
+
+
+def fold_files(foldname):
+    """All files in the fold should have the same extern"""
+    allfiles = os.listdir(foldname)
+    if len(allfiles) < 1:
+        raise ValueError('No images in the data folder')
+        return None
+    else:
+        return allfiles

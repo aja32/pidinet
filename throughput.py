@@ -11,20 +11,16 @@ from __future__ import division
 
 
 import os
-os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
 import argparse
-import os
-import time
 import models
-from utils import *
-from edge_dataloader import BSDS_VOCLoader, BSDS_Loader, Multicue_Loader, NYUD_Loader
-from torch.utils.data import DataLoader
 
+from utils import *
+from edge_dataloader import BSDS_VOCLoader, Dataloader_BSDS500
+from torch.utils.data import DataLoader
 import torch
-import torchvision
-import torch.nn as nn
-import torch.nn.functional as F
-import torch.backends.cudnn as cudnn
+
+
+os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
 
 parser = argparse.ArgumentParser(description='PyTorch Diff Convolutional Networks (Train)')
 
@@ -69,8 +65,7 @@ def main():
     torch.cuda.manual_seed_all(args.seed)
     args.use_cuda = torch.cuda.is_available()
 
-    dataset_setting_choices = ['BSDS', 'NYUD-image', 'NYUD-hha', 'Multicue-boundary-1', 
-                'Multicue-boundary-2', 'Multicue-boundary-3', 'Multicue-edge-1', 'Multicue-edge-2', 'Multicue-edge-3']
+    dataset_setting_choices = ['BSDS', 'Custom']
     if not isinstance(args.dataset, list): 
         assert args.dataset in dataset_setting_choices, 'unrecognized data setting %s, please choose from %s' % (str(args.dataset), str(dataset_setting_choices))
         args.dataset = list(args.dataset.strip().split('-')) 
@@ -90,10 +85,6 @@ def main():
     ### Load Data
     if 'BSDS' == args.dataset[0]:
         test_dataset = BSDS_VOCLoader(root=args.datadir, split="test", threshold=args.eta)
-    elif 'Multicue' == args.dataset[0]:
-        test_dataset = Multicue_Loader(root=args.datadir, split="test", threshold=args.eta, setting=args.dataset[1:])
-    elif 'NYUD' == args.dataset[0]:
-        test_dataset = NYUD_Loader(root=args.datadir, split="test", setting=args.dataset[1:])
     else:
         raise ValueError("unrecognized dataset setting")
     test_loader = DataLoader(

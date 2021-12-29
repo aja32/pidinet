@@ -1,8 +1,5 @@
 
 
-import math
-import numpy as np
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -10,10 +7,41 @@ import torch.nn.functional as F
 from .ops import Conv2d
 from .config import config_model, config_model_converted
 
+"""
+Based on the architecture, we will be defining classes of:
+1- CDCM
+2- CSAM
+3- MapReduce
+4- Blocks and the PiDiNet for arch implementation.
+
+"""
+class CDCM(nn.Module):
+
+    """Compact Dilation Convolution based Module"""
+
+    def __init__(self, in_channels, out_channels):
+        super(CDCM, self).__init__()
+
+        self.relu1 = nn.ReLU()
+        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=1, padding=0)
+        self.conv2_1 = nn.Conv2d(out_channels, out_channels, kernel_size=3, dilation=5, padding=5, bias=False)
+        self.conv2_2 = nn.Conv2d(out_channels, out_channels, kernel_size=3, dilation=7, padding=7, bias=False)
+        self.conv2_3 = nn.Conv2d(out_channels, out_channels, kernel_size=3, dilation=9, padding=9, bias=False)
+        self.conv2_4 = nn.Conv2d(out_channels, out_channels, kernel_size=3, dilation=11, padding=11, bias=False)
+        nn.init.constant_(self.conv1.bias, 0)
+
+    def forward(self, y):
+        y = self.relu1(y)
+        y = self.conv1(y)
+        y1 = self.conv2_1(y)
+        y2 = self.conv2_2(y)
+        y3 = self.conv2_3(y)
+        y4 = self.conv2_4(y)
+        return y1 + y2 + y3 + y4
+
+
 class CSAM(nn.Module):
-    """
-    Compact Spatial Attention Module
-    """
+    """Compact Spatial Attention Module """
     def __init__(self, channels):
         super(CSAM, self).__init__()
 
@@ -25,57 +53,20 @@ class CSAM(nn.Module):
         nn.init.constant_(self.conv1.bias, 0)
 
     def forward(self, x):
-        y = self.relu1(x)
-        y = self.conv1(y)
-        y = self.conv2(y)
-        y = self.sigmoid(y)
+        z = self.relu1(x)
+        z = self.conv1(z)
+        z = self.conv2(z)
+        z = self.sigmoid(z)
 
-        return x * y
-
-class CDCM(nn.Module):
-    """
-    Compact Dilation Convolution based Module
-    """
-    def __init__(self, in_channels, out_channels):
-        super(CDCM, self).__init__()
-
-        self.relu1 = nn.ReLU()
-        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=1, padding=0)
-        self.conv2_1 = nn.Conv2d(out_channels, out_channels, kernel_size=3, dilation=5, padding=5, bias=False)
-        self.conv2_2 = nn.Conv2d(out_channels, out_channels, kernel_size=3, dilation=7, padding=7, bias=False)
-        self.conv2_3 = nn.Conv2d(out_channels, out_channels, kernel_size=3, dilation=9, padding=9, bias=False)
-        self.conv2_4 = nn.Conv2d(out_channels, out_channels, kernel_size=3, dilation=11, padding=11, bias=False)
-        nn.init.constant_(self.conv1.bias, 0)
-        
-    def forward(self, x):
-        x = self.relu1(x)
-        x = self.conv1(x)
-        x1 = self.conv2_1(x)
-        x2 = self.conv2_2(x)
-        x3 = self.conv2_3(x)
-        x4 = self.conv2_4(x)
-        return x1 + x2 + x3 + x4
-
-
-class MapReduce(nn.Module):
-    """
-    Reduce feature maps into a single edge map
-    """
-    def __init__(self, channels):
-        super(MapReduce, self).__init__()
-        self.conv = nn.Conv2d(channels, 1, kernel_size=1, padding=0)
-        nn.init.constant_(self.conv.bias, 0)
-
-    def forward(self, x):
-        return self.conv(x)
+        return x * z
 
 
 class PDCBlock(nn.Module):
     def __init__(self, pdc, inplane, ouplane, stride=1):
         super(PDCBlock, self).__init__()
-        self.stride=stride
-            
-        self.stride=stride
+        self.stride = stride
+
+        self.stride = stride
         if self.stride > 1:
             self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
             self.shortcut = nn.Conv2d(inplane, ouplane, kernel_size=1, padding=0)
@@ -123,6 +114,17 @@ class PDCBlock_converted(nn.Module):
             x = self.shortcut(x)
         y = y + x
         return y
+
+
+class MapReduce(nn.Module):
+    """ Reduce feature maps into a single edge map """
+    def __init__(self, channels):
+        super(MapReduce, self).__init__()
+        self.conv = nn.Conv2d(channels, 1, kernel_size=1, padding=0)
+        nn.init.constant_(self.conv.bias, 0)
+
+    def forward(self, x):
+        return self.conv(x)
 
 class PiDiNet(nn.Module):
     def __init__(self, inplane, pdcs, dil=None, sa=False, convert=False):
@@ -288,8 +290,6 @@ def pidinet(args):
 
 
 ## convert pidinet to vanilla cnn
-
-
 def pidinet_converted(args):
     pdcs = config_model_converted(args.config)
     dil = 24 if args.dil else None

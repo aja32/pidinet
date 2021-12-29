@@ -13,19 +13,15 @@ import os
 os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
 
 import argparse
-import os
-import time
 import models
 from models.convert_pidinet import convert_pidinet
 from utils import *
-from edge_dataloader import BSDS_VOCLoader, BSDS_Loader, Custom_Loader
+from edge_dataloader import BSDS_VOCLoader, Dataloader_BSDS500, Custom_Loader
 from torch.utils.data import DataLoader
 
 import torch
 import torchvision
-import torch.nn as nn
-import torch.nn.functional as F
-import torch.backends.cudnn as cudnn
+
 
 parser = argparse.ArgumentParser(description='PyTorch Pixel Difference Convolutional Networks')
 
@@ -38,7 +34,7 @@ parser.add_argument('--only-bsds', action='store_true',
 parser.add_argument('--ablation', action='store_true', 
         help='not use bsds val set for training')
 parser.add_argument('--dataset', type=str, default='BSDS',
-        help='data settings for BSDS, Multicue and NYUD datasets')
+        help='data settings for BSDS dataset')
 
 parser.add_argument('--model', type=str, default='baseline', 
         help='model to train the dataset')
@@ -88,10 +84,131 @@ parser.add_argument('--evaluate-converted', action='store_true',
         help='convert the checkpoint to vanilla cnn, then evaluate')
 
 args = parser.parse_args()
-
-
 os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
 
+
+# Training Function
+def train(train_loader, model, optimizer, epoch, running_file, args, running_lr):
+    batch_processing_time = AverageMeter()
+    data_processing_time = AverageMeter()
+    losses_temp = AverageMeter()
+
+    ## Switch to train mode
+    model.train()
+
+    running_file.write('\n%s\n' % str(args))
+    running_file.flush()
+
+    wD = len(str(len(train_loader)//args.iter_size))
+    wE = len(str(args.epochs))
+
+    end = time.time()
+    iter_step = 0
+    counter = 0
+    loss_value = 0
+    optimizer.zero_grad()
+    for i, (image, label) in enumerate(train_loader):
+
+        ## Measure data loading time
+        data_processing_time.update(time.time() - end)
+
+        if args.use_cuda:
+            image = image.cuda(non_blocking=True)
+            label = label.cuda(non_blocking=True)
+
+        ## Compute output
+        outputs = model(image)
+        if not isinstance(outputs, list):
+            loss = cross_entropy_loss_RCF(outputs, label, args.lmbda)
+        else:
+            loss = 0
+            for o in outputs:
+                loss += cross_entropy_loss_RCF(o, label, args.lmbda)
+
+        counter += 1
+        loss_value += loss.item()
+        loss = loss / args.iter_size
+        loss.backward()
+        if counter == args.iter_size:
+            optimizer.step()
+            optimizer.zero_grad()
+            counter = 0
+            iter_step += 1
+
+            # record loss
+            losses_temp.update(loss_value, args.iter_size)
+            batch_processing_time.update(time.time() - end)
+            end = time.time()
+            loss_value = 0
+
+            # display and logging
+            if iter_step % args.print_freq == 1:
+                runinfo = str(('Epoch: [{0:0%dd}/{1:0%dd}][{2:0%dd}/{3:0%dd}]\t' \
+                          % (wE, wE, wD, wD) + \
+                          'Time {batch_processing_time.val:.3f}\t' + \
+                          'Data {data_processing_time.val:.3f}\t' + \
+                          'Loss {loss.val:.4f} (avg:{loss.avg:.4f})\t' + \
+                          'lr {lr}\t').format(
+                              epoch, args.epochs, iter_step, len(train_loader)//args.iter_size,
+                              batch_processing_time=batch_processing_time, data_processing_time=data_processing_time,
+                              loss=losses_temp, lr=running_lr))
+                print(runinfo)
+                running_file.write('%s\n' % runinfo)
+                running_file.flush()
+
+    str_loss = '%.4f' % (losses_temp.avg)
+    return str_loss
+
+# Test function
+def test(test_loader, model, epoch, running_file, args):
+
+    from PIL import Image
+    import scipy.io as sio
+    model.eval()
+
+    if args.ablation:
+        img_dir = os.path.join(args.savedir, 'eval_results_val', 'imgs_epoch_%03d' % (epoch - 1))
+        mat_dir = os.path.join(args.savedir, 'eval_results_val', 'mats_epoch_%03d' % (epoch - 1))
+    else:
+        img_dir = os.path.join(args.savedir, 'eval_results', 'imgs_epoch_%03d' % (epoch - 1))
+        mat_dir = os.path.join(args.savedir, 'eval_results', 'mats_epoch_%03d' % (epoch - 1))
+    eval_info = '\nBegin to eval...\nImg generated in %s\n' % img_dir
+    print(eval_info)
+    running_file.write('\n%s\n%s\n' % (str(args), eval_info))
+    if not os.path.exists(img_dir):
+        os.makedirs(img_dir)
+    else:
+        print('%s already exits' % img_dir)
+        #return
+    if not os.path.exists(mat_dir):
+        os.makedirs(mat_dir)
+
+    for idx, (image, img_name) in enumerate(test_loader):
+
+        img_name = img_name[0]
+        with torch.no_grad():
+            image = image.cuda() if args.use_cuda else image
+            _, _, H, W = image.shape
+            results = model(image)
+            result = torch.squeeze(results[-1]).cpu().numpy()
+
+        results_all = torch.zeros((len(results), 1, H, W))
+        for i in range(len(results)):
+          results_all[i, 0, :, :] = results[i]
+
+        torchvision.utils.save_image(1-results_all,
+                os.path.join(img_dir, "%s.jpg" % img_name))
+        sio.savemat(os.path.join(mat_dir, '%s.mat' % img_name), {'img': result})
+        result = Image.fromarray((result * 255).astype(np.uint8))
+        result.save(os.path.join(img_dir, "%s.png" % img_name))
+        runinfo = "Running test [%d/%d]" % (idx + 1, len(test_loader))
+        print(runinfo)
+        running_file.write('%s\n' % runinfo)
+    running_file.write('\nDone\n')
+
+
+
+# Main function needed to define model,use both train and test.
 def main(running_file):
 
     global args
@@ -106,8 +223,7 @@ def main(running_file):
     if args.lr_steps is not None and not isinstance(args.lr_steps, list): 
         args.lr_steps = list(map(int, args.lr_steps.split('-'))) 
 
-    dataset_setting_choices = ['BSDS', 'NYUD-image', 'NYUD-hha', 'Multicue-boundary-1', 
-                'Multicue-boundary-2', 'Multicue-boundary-3', 'Multicue-edge-1', 'Multicue-edge-2', 'Multicue-edge-3', 'Custom']
+    dataset_setting_choices = ['BSDS',  'Custom']
     if not isinstance(args.dataset, list): 
         assert args.dataset in dataset_setting_choices, 'unrecognized data setting %s, please choose from %s' % (str(args.dataset), str(dataset_setting_choices))
         args.dataset = list(args.dataset.strip().split('-')) 
@@ -161,13 +277,12 @@ def main(running_file):
     else:
         print('cuda is not used, the running might be slow')
 
-    #cudnn.benchmark = True
 
     ### Load Data
     if 'BSDS' == args.dataset[0]:
         if args.only_bsds:
-            train_dataset = BSDS_Loader(root=args.datadir, split="train", threshold=args.eta, ablation=args.ablation)
-            test_dataset = BSDS_Loader(root=args.datadir, split="test", threshold=args.eta)
+            train_dataset = Dataloader_BSDS500(root=args.datadir, split="train", threshold=args.eta, ablation=args.ablation)
+            test_dataset = Dataloader_BSDS500(root=args.datadir, split="test", threshold=args.eta)
         else:
             train_dataset = BSDS_VOCLoader(root=args.datadir, split="train", threshold=args.eta, ablation=args.ablation)
             test_dataset = BSDS_VOCLoader(root=args.datadir, split="test", threshold=args.eta)
@@ -237,173 +352,8 @@ def main(running_file):
     return
 
 
-def train(train_loader, model, optimizer, epoch, running_file, args, running_lr):
-    batch_time = AverageMeter()
-    data_time = AverageMeter()
-    losses = AverageMeter()
-
-    ## Switch to train mode
-    model.train()
-
-    running_file.write('\n%s\n' % str(args))
-    running_file.flush()
-
-    wD = len(str(len(train_loader)//args.iter_size))
-    wE = len(str(args.epochs))
-
-    end = time.time()
-    iter_step = 0
-    counter = 0
-    loss_value = 0
-    optimizer.zero_grad()
-    for i, (image, label) in enumerate(train_loader):
-
-        ## Measure data loading time
-        data_time.update(time.time() - end)
-
-        if args.use_cuda:
-            image = image.cuda(non_blocking=True)
-            label = label.cuda(non_blocking=True)
-
-        ## Compute output
-        outputs = model(image)
-        if not isinstance(outputs, list):
-            loss = cross_entropy_loss_RCF(outputs, label, args.lmbda)
-        else:
-            loss = 0
-            for o in outputs:
-                loss += cross_entropy_loss_RCF(o, label, args.lmbda)
-
-        counter += 1
-        loss_value += loss.item()
-        loss = loss / args.iter_size
-        loss.backward()
-        if counter == args.iter_size:
-            optimizer.step()
-            optimizer.zero_grad()
-            counter = 0
-            iter_step += 1
-
-            # record loss
-            losses.update(loss_value, args.iter_size)
-            batch_time.update(time.time() - end)
-            end = time.time()
-            loss_value = 0
-
-            # display and logging
-            if iter_step % args.print_freq == 1:
-                runinfo = str(('Epoch: [{0:0%dd}/{1:0%dd}][{2:0%dd}/{3:0%dd}]\t' \
-                          % (wE, wE, wD, wD) + \
-                          'Time {batch_time.val:.3f}\t' + \
-                          'Data {data_time.val:.3f}\t' + \
-                          'Loss {loss.val:.4f} (avg:{loss.avg:.4f})\t' + \
-                          'lr {lr}\t').format(
-                              epoch, args.epochs, iter_step, len(train_loader)//args.iter_size, 
-                              batch_time=batch_time, data_time=data_time, 
-                              loss=losses, lr=running_lr))
-                print(runinfo)
-                running_file.write('%s\n' % runinfo)
-                running_file.flush()
-
-    str_loss = '%.4f' % (losses.avg)
-    return str_loss
 
 
-def test(test_loader, model, epoch, running_file, args):
-
-    from PIL import Image
-    import scipy.io as sio
-    model.eval()
-
-    if args.ablation:
-        img_dir = os.path.join(args.savedir, 'eval_results_val', 'imgs_epoch_%03d' % (epoch - 1))
-        mat_dir = os.path.join(args.savedir, 'eval_results_val', 'mats_epoch_%03d' % (epoch - 1))
-    else:
-        img_dir = os.path.join(args.savedir, 'eval_results', 'imgs_epoch_%03d' % (epoch - 1))
-        mat_dir = os.path.join(args.savedir, 'eval_results', 'mats_epoch_%03d' % (epoch - 1))
-    eval_info = '\nBegin to eval...\nImg generated in %s\n' % img_dir
-    print(eval_info)
-    running_file.write('\n%s\n%s\n' % (str(args), eval_info))
-    if not os.path.exists(img_dir):
-        os.makedirs(img_dir)
-    else:
-        print('%s already exits' % img_dir)
-        #return
-    if not os.path.exists(mat_dir):
-        os.makedirs(mat_dir)
-
-    for idx, (image, img_name) in enumerate(test_loader):
-
-        img_name = img_name[0]
-        with torch.no_grad():
-            image = image.cuda() if args.use_cuda else image
-            _, _, H, W = image.shape
-            results = model(image)
-            result = torch.squeeze(results[-1]).cpu().numpy()
-
-        results_all = torch.zeros((len(results), 1, H, W))
-        for i in range(len(results)):
-          results_all[i, 0, :, :] = results[i]
-
-        torchvision.utils.save_image(1-results_all, 
-                os.path.join(img_dir, "%s.jpg" % img_name))
-        sio.savemat(os.path.join(mat_dir, '%s.mat' % img_name), {'img': result})
-        result = Image.fromarray((result * 255).astype(np.uint8))
-        result.save(os.path.join(img_dir, "%s.png" % img_name))
-        runinfo = "Running test [%d/%d]" % (idx + 1, len(test_loader))
-        print(runinfo)
-        running_file.write('%s\n' % runinfo)
-    running_file.write('\nDone\n')
-
-def multiscale_test(test_loader, model, epoch, running_file, args):
-
-    from PIL import Image
-    import scipy.io as sio
-    model.eval()
-
-    if args.ablation:
-        img_dir = os.path.join(args.savedir, 'eval_results_val', 'imgs_epoch_%03d_ms' % (epoch - 1))
-        mat_dir = os.path.join(args.savedir, 'eval_results_val', 'mats_epoch_%03d_ms' % (epoch - 1))
-    else:
-        img_dir = os.path.join(args.savedir, 'eval_results', 'imgs_epoch_%03d_ms' % (epoch - 1))
-        mat_dir = os.path.join(args.savedir, 'eval_results', 'mats_epoch_%03d_ms' % (epoch - 1))
-    eval_info = '\nBegin to eval...\nImg generated in %s\n' % img_dir
-    print(eval_info)
-    running_file.write('\n%s\n%s\n' % (str(args), eval_info))
-    if not os.path.exists(img_dir):
-        os.makedirs(img_dir)
-    else:
-        print('%s already exits' % img_dir)
-        return
-    if not os.path.exists(mat_dir):
-        os.makedirs(mat_dir)
-
-    for idx, (image, img_name) in enumerate(test_loader):
-        img_name = img_name[0]
-
-        image = image[0]
-        image_in = image.numpy().transpose((1,2,0))
-        scale = [0.5, 1, 1.5]
-        _, H, W = image.shape
-        multi_fuse = np.zeros((H, W), np.float32)
-
-        with torch.no_grad():
-            for k in range(0, len(scale)):
-                im_ = cv2.resize(image_in, None, fx=scale[k], fy=scale[k], interpolation=cv2.INTER_LINEAR)
-                im_ = im_.transpose((2,0,1))
-                results = model(torch.unsqueeze(torch.from_numpy(im_).cuda(), 0))
-                result = torch.squeeze(results[-1].detach()).cpu().numpy()
-                fuse = cv2.resize(result, (W, H), interpolation=cv2.INTER_LINEAR)
-                multi_fuse += fuse
-            multi_fuse = multi_fuse / len(scale)
-
-        sio.savemat(os.path.join(mat_dir, '%s.mat' % img_name), {'img': multi_fuse})
-        result = Image.fromarray((multi_fuse * 255).astype(np.uint8))
-        result.save(os.path.join(img_dir, "%s.png" % img_name))
-        runinfo = "Running test [%d/%d]" % (idx + 1, len(test_loader))
-        print(runinfo)
-        running_file.write('%s\n' % runinfo)
-    running_file.write('\nDone\n')
 
 if __name__ == '__main__':
     os.makedirs(args.savedir, exist_ok=True)
