@@ -256,12 +256,10 @@ nets = {
         },
     }
 
-
-def config_model(model):
+def model_configeration(model):
     model_options = list(nets.keys())
     assert model in model_options, \
         'unrecognized model, please choose from %s' % str(model_options)
-
     print(str(nets[model]))
 
     pdcs = []

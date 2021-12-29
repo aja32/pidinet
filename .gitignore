@@ -1,3 +1,5 @@
+#Gitignore file used as text file that tells Git which files or folders to ignore in a project.
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

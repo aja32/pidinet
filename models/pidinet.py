@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from .ops import Conv2d
-from .config import config_model, config_model_converted
+from .config import model_configeration, config_model_converted
 
 """
 Based on the architecture, we will be defining classes of:
@@ -283,7 +283,7 @@ class PiDiNet(nn.Module):
 
 
 def pidinet(args):
-    pdcs = config_model(args.config)
+    pdcs = model_configeration(args.config)
     dil = 24 if args.dil else None
     return PiDiNet(60, pdcs, dil=dil, sa=args.sa)
 
