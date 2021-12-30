@@ -23,6 +23,7 @@ class CDCM(nn.Module):
         super(CDCM, self).__init__()
 
         self.relu1 = nn.ReLU()
+
         self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=1, padding=0)
         self.conv2_1 = nn.Conv2d(out_channels, out_channels, kernel_size=3, dilation=5, padding=5, bias=False)
         self.conv2_2 = nn.Conv2d(out_channels, out_channels, kernel_size=3, dilation=7, padding=7, bias=False)
@@ -221,7 +222,7 @@ class PiDiNet(nn.Module):
         return conv_weights, bn_weights, relu_weights
 
     def forward(self, x):
-        H, W = x.size()[2:]
+        Hight, Width = x.size()[2:]
 
         x = self.init_block(x)
 
@@ -257,19 +258,19 @@ class PiDiNet(nn.Module):
         else:
             x_fuses = [x1, x2, x3, x4]
 
-        e1 = self.conv_reduces[0](x_fuses[0])
-        e1 = F.interpolate(e1, (H, W), mode="bilinear", align_corners=False)
+        output_1 = self.conv_reduces[0](x_fuses[0])
+        output_1 = F.interpolate(output_1, (Hight, Width), mode="bilinear", align_corners=False)
 
-        e2 = self.conv_reduces[1](x_fuses[1])
-        e2 = F.interpolate(e2, (H, W), mode="bilinear", align_corners=False)
+        output_2 = self.conv_reduces[1](x_fuses[1])
+        output_2 = F.interpolate(output_2, (Hight, Width), mode="bilinear", align_corners=False)
 
-        e3 = self.conv_reduces[2](x_fuses[2])
-        e3 = F.interpolate(e3, (H, W), mode="bilinear", align_corners=False)
+        output_3 = self.conv_reduces[2](x_fuses[2])
+        output_3 = F.interpolate(output_3, (Hight, Width), mode="bilinear", align_corners=False)
 
-        e4 = self.conv_reduces[3](x_fuses[3])
-        e4 = F.interpolate(e4, (H, W), mode="bilinear", align_corners=False)
+        output_4 = self.conv_reduces[3](x_fuses[3])
+        output_4 = F.interpolate(output_4, (Hight, Width), mode="bilinear", align_corners=False)
 
-        outputs = [e1, e2, e3, e4]
+        outputs = [output_1, output_2, output_3, output_4]
 
         output = self.classifier(torch.cat(outputs, dim=1))
         #if not self.training:
